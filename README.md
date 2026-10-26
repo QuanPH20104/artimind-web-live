@@ -1,6 +1,6 @@
 # artimind-web-live
 
-Today-only web KPIs for Artimind (visitors, people per 10-minute slot, `/activate` sub activations,
+Today's web KPIs for Artimind (plus a Yesterday switch for the previous full day) (visitors, people per 10-minute slot, `/activate` sub activations,
 web purchases, AI-service and activate fail rates), published to GitHub Pages every 10 minutes.
 
 - Data: BigQuery `iip032-artimind.web_live.*`, refreshed every 10 min (at :x4) by a scheduled query

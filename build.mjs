@@ -41,35 +41,42 @@ async function query(sql) {
   );
 }
 
-const daily = await query(`
-  SELECT * FROM \`${PROJECT}.web_live.daily_kpis\`
-  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')`);
-const hourly = await query(`
-  SELECT event_date, hour_vn, visitors, new_visitors, activate_success_users, web_sub_purchasers
-  FROM \`${PROJECT}.web_live.hourly_kpis\`
-  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')
-  ORDER BY hour_vn`);
-const slots = await query(`
-  SELECT FORMAT_DATETIME('%Y-%m-%dT%H:%M', slot_vn) AS slot_vn, active_users, new_today_users,
-    first_visit_users, activate_success_users, activate_error_users, gen_success_events, gen_error_events
-  FROM \`${PROJECT}.web_live.slot_kpis\`
-  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')
-  ORDER BY slot_vn`);
-const services = await query(`
-  SELECT service, success_events, error_events, error_users, top_errors
-  FROM \`${PROJECT}.web_live.service_kpis\`
-  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')
-  ORDER BY service`);
+// One Vietnam calendar day: 0 = today, 1 = yesterday.
+async function day(offset) {
+  const d = `DATE_SUB(CURRENT_DATE('Asia/Ho_Chi_Minh'), INTERVAL ${offset} DAY)`;
+  const [daily, hourly, slots, services] = await Promise.all([
+    query(`
+      SELECT * FROM \`${PROJECT}.web_live.daily_kpis\`
+      WHERE event_date = ${d}`),
+    query(`
+      SELECT event_date, hour_vn, visitors, new_visitors, activate_success_users, web_sub_purchasers
+      FROM \`${PROJECT}.web_live.hourly_kpis\`
+      WHERE event_date = ${d}
+      ORDER BY hour_vn`),
+    query(`
+      SELECT FORMAT_DATETIME('%Y-%m-%dT%H:%M', slot_vn) AS slot_vn, active_users, new_today_users,
+        first_visit_users, activate_success_users, activate_error_users, gen_success_events, gen_error_events
+      FROM \`${PROJECT}.web_live.slot_kpis\`
+      WHERE event_date = ${d}
+      ORDER BY slot_vn`),
+    query(`
+      SELECT service, success_events, error_events, error_users, top_errors
+      FROM \`${PROJECT}.web_live.service_kpis\`
+      WHERE event_date = ${d}
+      ORDER BY service`),
+  ]);
+  return { daily, hourly, slots, services };
+}
 
-// Today only (Vietnam calendar day): nothing older is published.
-const refreshedAt = daily.reduce((max, d) => (d.refreshed_at > max ? d.refreshed_at : max), '');
+// Today (Vietnam calendar day) plus yesterday, so the previous day stays viewable after midnight.
+const [today, yesterday] = await Promise.all([day(0), day(1)]);
+const strip = ({ daily, ...rest }) => ({ daily: daily.map(({ refreshed_at, ...d }) => d), ...rest });
+const refreshedAt = [...today.daily, ...yesterday.daily].reduce((max, d) => (d.refreshed_at > max ? d.refreshed_at : max), '');
 const payload = {
   generatedAt: new Date().toISOString(),
   refreshedAt,
-  daily: daily.map(({ refreshed_at, ...d }) => d),
-  hourly,
-  slots,
-  services,
+  ...strip(today),
+  yesterday: strip(yesterday),
 };
 
 const key = await crypto.subtle.importKey('raw', Buffer.from(DASHBOARD_KEY, 'base64url'), 'AES-GCM', false, ['encrypt']);
@@ -83,4 +90,7 @@ await writeFile(
 );
 await copyFile('index.html', 'site/index.html');
 await writeFile('site/robots.txt', 'User-agent: *\nDisallow: /\n');
-console.log(`daily=${daily.length} hourly=${hourly.length} slots=${slots.length} services=${services.length} refreshedAt=${refreshedAt}`);
+for (const [name, d] of [['today', today], ['yesterday', yesterday]]) {
+  console.log(`${name}: daily=${d.daily.length} hourly=${d.hourly.length} slots=${d.slots.length} services=${d.services.length}`);
+}
+console.log(`refreshedAt=${refreshedAt}`);

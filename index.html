@@ -96,13 +96,27 @@
   th.codes, td.codes { text-align: left; color: var(--text-secondary); white-space: normal; min-width: 180px; }
   tr.group td { color: var(--text-muted); font-size: 12px; font-weight: 600; padding-top: 12px; }
   .locked { text-align: center; padding: 48px 16px; color: var(--text-secondary); }
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 13px; padding: 5px 12px; border: 0; cursor: pointer;
+    background: transparent; color: var(--text-secondary);
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--surface-1); color: var(--text-primary); font-weight: 600; }
 </style>
 </head>
 <body>
 <main class="viz-root">
   <div class="wrap">
     <header>
-      <h1>Artimind Web · Today</h1>
+      <div class="head">
+        <h1 id="title">Artimind Web · Today</h1>
+        <div class="seg" id="seg" role="group" aria-label="Day" hidden>
+          <button type="button" data-view="today" aria-pressed="true">Today</button>
+          <button type="button" data-view="yesterday" aria-pressed="false">Yesterday</button>
+        </div>
+      </div>
       <p id="meta">Loading…</p>
     </header>
 
@@ -116,27 +130,27 @@
 
         <section class="card">
           <h2>Every 10 minutes</h2>
-          <p class="hint">Vietnam time · people active in each 10-minute slot, and how many of them were new to today (the growth of today's visitor count)</p>
+          <p class="hint">Vietnam time · people active in each 10-minute slot, and how many of them were new to the day (the growth of the day's visitor count)</p>
           <div class="legend" id="lg-slots"></div>
           <div class="chart" id="c-slots"></div>
           <div class="table-wrap"><table id="tbl-slots"></table></div>
         </section>
 
         <section class="card">
-          <h2>Fail rates today</h2>
+          <h2 id="h-fail">Fail rates today</h2>
           <p class="hint">AI services: failed ÷ (succeeded + failed) jobs and chat replies. Credit / plan walls (ERR115, ERR112…) and chat errors the app silently resent don't count as failures. Activate: people whose claim or email lookup failed ÷ people who finished one.</p>
           <div class="table-wrap"><table id="tbl-fail"></table></div>
         </section>
 
         <section class="card">
-          <h2>Today, hour by hour</h2>
+          <h2 id="h-hourly">Today, hour by hour</h2>
           <p class="hint">Vietnam time · visitors and sub activations in each hour (people)</p>
           <div class="legend" id="lg-hourly"></div>
           <div class="chart" id="c-hourly"></div>
         </section>
 
         <section class="card">
-          <h2>Today by hour</h2>
+          <h2 id="h-table">Today by hour</h2>
           <div class="table-wrap"><table id="tbl"></table></div>
         </section>
       </div>
@@ -144,8 +158,8 @@
 
     <footer>
       Source: GA4 → BigQuery (<code>web_live</code>, refreshed every 10 min). artimind.com + artimind.io,
-      excluding Vietnam and test traffic. Shows today only (Vietnam calendar day); it rolls over at
-      midnight Vietnam time. People = distinct browsers,
+      excluding Vietnam and test traffic. Shows today (Vietnam calendar day; it rolls over at
+      midnight Vietnam time) or yesterday's whole day. People = distinct browsers,
       so one person on two devices counts twice. % activated = activations ÷ visitors in the same hour
       (or the whole day). Sub activation = <code>activate_success</code>
       (FE signal); Stripe / backend remain the source of truth for money. Fail rates come from the
@@ -188,7 +202,12 @@
   const vnTime = (iso) =>
     new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
 
-  let data = null;
+  let payload = null; // decrypted file: today's rows at the top level, yesterday's under .yesterday
+  let data = null;    // the day being shown
+  let view = 'today';
+  const past = () => view === 'yesterday';
+  const dayWord = () => (past() ? 'yesterday' : 'today');
+  const Day = () => (past() ? 'Yesterday' : 'Today');
   const pct = (a, b) => (b ? Math.round((100 * a) / b) + '%' : '–');
 
   // ── 10-minute slots & fail rates ─────────────────────────────────────────
@@ -202,12 +221,13 @@
   const rateCell = (r) =>
     r == null ? '–' : `${(100 * r).toFixed(r < 0.1 && r > 0 ? 1 : 0)}%${r >= HIGH_FAIL ? ' <span class="warn">▲ high</span>' : ''}`;
 
-  // All of today's slots from 00:00 to the latest one, zero-filled; the last one may still be filling.
+  // All of the day's slots from 00:00 to the latest one, zero-filled; today's last one may still be filling.
   function slotRows() {
     const by = new Map(data.slots.map((r) => [r.slot_vn, r]));
     if (!data.slots.length) return [];
     const day = data.daily[0].event_date;
-    const last = data.slots[data.slots.length - 1].slot_vn;
+    // A finished day runs to 23:50 even if its last slots were empty.
+    const last = past() ? `${day}T23:50` : data.slots[data.slots.length - 1].slot_vn;
     const rows = [];
     for (let t = slotStart(`${day}T00:00`).getTime(); t <= slotStart(last).getTime(); t += SLOT_MS) {
       const key = new Date(t + 7 * 3600000).toISOString().slice(0, 16);
@@ -220,14 +240,14 @@
     const rows = slotRows().filter((r) => r.done);
     const cur = rows[rows.length - 1];
     const prev = rows[rows.length - 2];
-    if (!cur) return { label: 'Last 10 min', value: null, subs: ['No complete slot yet today'] };
+    if (!cur) return { label: 'Last 10 min', value: null, subs: [`No complete slot ${dayWord()}`] };
     const d = (k) => (cur[k] ?? 0) - (prev?.[k] ?? 0);
     return {
-      label: `Last 10 min · ${slotRange(cur.slot_vn)}`,
+      label: `${past() ? 'Final' : 'Last'} 10 min · ${slotRange(cur.slot_vn)}`,
       value: cur.new_today_users ?? 0,
       prefix: '+',
       subs: [
-        `new visitors today (${signed(d('new_today_users'))} vs the 10 min before)`,
+        `new visitors ${dayWord()} (${signed(d('new_today_users'))} vs the 10 min before)`,
         `${fmt(cur.active_users ?? 0)} people active (${signed(d('active_users'))})`,
       ],
     };
@@ -295,7 +315,7 @@
     $('tbl-fail').innerHTML =
       '<thead><tr><th>Service</th><th>Attempts</th><th>Failed</th><th>Fail rate</th><th>People hit</th><th class="codes">Top errors</th></tr></thead><tbody>' +
       '<tr class="group"><td colspan="6">AI services (jobs / chat replies)</td></tr>' +
-      (svc.join('') || '<tr><td colspan="6" class="muted">No AI activity yet today</td></tr>') +
+      (svc.join('') || `<tr><td colspan="6" class="muted">No AI activity ${dayWord()}</td></tr>`) +
       '<tr class="group"><td colspan="6">Activate (people)</td></tr>' +
       `<tr><td>Sub claim</td><td>${fmt(claimTotal)}</td><td>${fmt(t.activate_error_users)}</td>` +
       `<td>${rateCell(rate(t.activate_error_users, claimTotal))}</td><td>${fmt(t.activate_error_users)}</td><td class="codes"></td></tr>` +
@@ -322,7 +342,7 @@
         label: 'Sub activations (/activate)',
         value: t.activate_success_users,
         subs: [
-          `${pct(t.activate_success_users, t.visitors)} of today's visitors activated`,
+          `${pct(t.activate_success_users, t.visitors)} of ${dayWord()}'s visitors activated`,
           `Funnel ${fmt(t.activate_success_funnel)} · Stripe return ${fmt(t.activate_success_stripe_return)} · other ${fmt(t.activate_success_other)}`,
           `${pct(t.activate_success_users, t.activate_lookup_users)} of ${fmt(t.activate_lookup_users)} lookups · ${fmt(t.activate_error_users)} error${t.activate_error_users === 1 ? '' : 's'}`,
         ],
@@ -503,7 +523,14 @@
 
   function renderMeta() {
     if (!data.daily.length) {
-      $('meta').textContent = 'No data for today yet. The first numbers appear 10–20 min after midnight Vietnam time.';
+      $('meta').textContent = past()
+        ? 'No data for yesterday.'
+        : 'No data for today yet. The first numbers appear 10–20 min after midnight Vietnam time. Yesterday is one click away.';
+      return;
+    }
+    if (past()) {
+      $('meta').textContent =
+        `Yesterday, ${dayLabel(data.daily[0].event_date)} · whole Vietnam day. Late GA4 events can still nudge these numbers until the day is finalized (refreshed ${vnTime(data.refreshedAt)} Vietnam time).`;
       return;
     }
     const mins = Math.round((Date.now() - new Date(data.refreshedAt)) / 60000);
@@ -512,7 +539,15 @@
   }
 
   function render() {
-    if (!data) return;
+    if (!payload) return;
+    data = past() ? { refreshedAt: payload.refreshedAt, ...(payload.yesterday ?? { daily: [], hourly: [] }) } : payload;
+    $('seg').hidden = !payload.yesterday;
+    for (const b of $('seg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.view === view));
+    $('title').textContent = `Artimind Web · ${Day()}`;
+    document.title = `Artimind Web · ${Day()}`;
+    $('h-fail').textContent = `Fail rates ${dayWord()}`;
+    $('h-hourly').textContent = `${Day()}, hour by hour`;
+    $('h-table').textContent = `${Day()} by hour`;
     renderMeta();
     $('content').hidden = !data.daily.length;
     if (!data.daily.length) return;
@@ -534,11 +569,11 @@
     }
     try {
       const blob = await fetch(`data.enc.json?t=${Date.now()}`, { cache: 'no-store' }).then((r) => r.json());
-      data = await decrypt(blob, key);
+      payload = await decrypt(blob, key);
       $('locked').hidden = true;
       render();
     } catch (err) {
-      if (!data) {
+      if (!payload) {
         $('meta').textContent = '';
         $('locked').hidden = false;
         $('locked').textContent = 'Could not open the data. The access link may be wrong or out of date.';
@@ -547,12 +582,19 @@
     }
   }
 
+  $('seg').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-view]');
+    if (!b || b.dataset.view === view) return;
+    view = b.dataset.view;
+    render();
+  });
+
   let resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => data && (renderSlots(), renderCharts()), 150);
   });
-  setInterval(() => (data ? renderMeta() : null), 60000);
+  setInterval(() => (payload ? renderMeta() : null), 60000);
   window.addEventListener('hashchange', load);
   setInterval(load, 2 * 60000);
   load();
