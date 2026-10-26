@@ -332,13 +332,14 @@
     return { rows, last };
   };
   const hourName = (i) => String(i).padStart(2, '0') + ':00';
+  const dateHour = (i) => `${dayLabel(data.daily[0].event_date)}, ${hourName(i)}`;
 
   function renderCharts() {
     const { rows, last } = hourIndex();
     const col = (k) => rows.map((r, i) => (i <= last ? r?.[k] ?? 0 : null));
     lineChart($('c-hourly'), $('lg-hourly'), {
       labels: rows.map((_, i) => String(i).padStart(2, '0')),
-      tipLabels: rows.map((_, i) => `${hourName(i)}–${String(i).padStart(2, '0')}:59`),
+      tipLabels: rows.map((_, i) => `${dateHour(i)}–${String(i).padStart(2, '0')}:59`),
       tickEvery: 3,
       series: [
         { name: 'Visitors', color: '--series-1', values: col('visitors') },
@@ -353,13 +354,13 @@
     const body = [];
     for (let i = last; i >= 0; i--) {
       const r = rows[i] ?? {};
-      body.push(`<tr><td>${hourName(i)}</td><td>${fmt(r.visitors ?? 0)}</td><td>${fmt(r.new_visitors ?? 0)}</td>` +
+      body.push(`<tr><td>${dateHour(i)}</td><td>${fmt(r.visitors ?? 0)}</td><td>${fmt(r.new_visitors ?? 0)}</td>` +
         `<td>${fmt(r.activate_success_users ?? 0)}</td><td>${pct(r.activate_success_users ?? 0, r.visitors)}</td>` +
         `<td>${fmt(r.web_sub_purchasers ?? 0)}</td></tr>`);
     }
     $('tbl').innerHTML =
       '<thead><tr><th>Hour</th><th>Visitors</th><th>New</th><th>Activations</th><th>% activated</th><th>Web purchases</th></tr></thead>' +
-      `<tbody><tr class="today"><td>Whole day</td><td>${fmt(t.visitors)}</td><td>${fmt(t.new_visitors)}</td>` +
+      `<tbody><tr class="today"><td>Whole day · ${dayLabel(t.event_date)}</td><td>${fmt(t.visitors)}</td><td>${fmt(t.new_visitors)}</td>` +
       `<td>${fmt(t.activate_success_users)}</td><td>${pct(t.activate_success_users, t.visitors)}</td>` +
       `<td>${fmt(t.web_sub_purchasers)}</td></tr>${body.join('')}</tbody>`;
   }
