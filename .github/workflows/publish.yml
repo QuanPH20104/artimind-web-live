@@ -9,6 +9,10 @@ on:
   push:
     branches: [main]
 
+env:
+  # The chain stops here (10:00 Vietnam time). After it, only pushes / manual runs publish.
+  STOP_AT: '2026-10-27T03:00:00Z'
+
 permissions:
   actions: write
   contents: read
@@ -16,7 +20,24 @@ permissions:
   pages: write
 
 jobs:
+  # The backup cron must not restart the chain after STOP_AT.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = schedule ] && [ "$(date +%s)" -ge "$(date -d "$STOP_AT" +%s)" ]; then
+            echo "Past STOP_AT; skipping the backup cron run."
+            echo go=false >> "$GITHUB_OUTPUT"
+          else
+            echo go=true >> "$GITHUB_OUTPUT"
+          fi
+
   publish:
+    needs: gate
+    if: ${{ needs.gate.outputs.go == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
       group: pages
@@ -57,18 +78,24 @@ jobs:
   # If a newer run is already active (push, cron, manual), it owns the chain and this one stops,
   # so duplicate chains collapse to one.
   next:
-    needs: publish
-    if: ${{ !cancelled() }}
+    needs: [gate, publish]
+    if: ${{ !cancelled() && needs.gate.outputs.go == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Wait for the next :x6
         run: |
           now=$(date +%s)
           next=$(( ( (now - 360) / 600 + 1 ) * 600 + 360 ))
+          if [ "$next" -ge "$(date -d "$STOP_AT" +%s)" ]; then
+            echo "Next slot is past STOP_AT ($STOP_AT); the chain ends here."
+            echo STOP=1 >> "$GITHUB_ENV"
+            exit 0
+          fi
           echo "next run at $(date -u -d @$next +%H:%M:%S) UTC"
           sleep $(( next - now ))
 
       - name: Dispatch the next run
+        if: ${{ env.STOP != '1' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
