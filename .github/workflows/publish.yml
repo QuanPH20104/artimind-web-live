@@ -2,24 +2,25 @@ name: publish
 
 on:
   schedule:
-    # 2 min after each BigQuery refresh (scheduled query runs at :x4, ~75 s)
+    # Backup only: GitHub cron is best-effort (often late or skipped). The real 10-min
+    # cadence is the `next` job below, which re-dispatches this workflow at the next :x6.
     - cron: '6-59/10 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
 
 permissions:
+  actions: write
   contents: read
   id-token: write
   pages: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   publish:
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -50,3 +51,32 @@ jobs:
 
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  # Self-scheduling chain: wait for the next :x6 (2 min after the BigQuery refresh at :x4),
+  # then dispatch the next run. workflow_dispatch is one of the events GITHUB_TOKEN may trigger.
+  # If a newer run is already active (push, cron, manual), it owns the chain and this one stops,
+  # so duplicate chains collapse to one.
+  next:
+    needs: publish
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the next :x6
+        run: |
+          now=$(date +%s)
+          next=$(( ( (now - 360) / 600 + 1 ) * 600 + 360 ))
+          echo "next run at $(date -u -d @$next +%H:%M:%S) UTC"
+          sleep $(( next - now ))
+
+      - name: Dispatch the next run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          newer=$(gh api "repos/$GH_REPO/actions/workflows/publish.yml/runs?per_page=20" \
+            --jq "[.workflow_runs[] | select(.id > ${{ github.run_id }} and .status != \"completed\")] | length")
+          if [ "$newer" -gt 0 ]; then
+            echo "A newer run is active; it continues the chain."
+            exit 0
+          fi
+          gh workflow run publish.yml --ref main
