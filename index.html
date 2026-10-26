@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
-<title>Artimind Web · Live</title>
+<title>Artimind Web · Today</title>
 <style>
   .viz-root {
     color-scheme: light;
@@ -97,7 +97,7 @@
 <main class="viz-root">
   <div class="wrap">
     <header>
-      <h1>Artimind Web · Live</h1>
+      <h1>Artimind Web · Today</h1>
       <p id="meta">Loading…</p>
     </header>
 
@@ -110,21 +110,14 @@
         <section class="tiles" id="tiles"></section>
 
         <section class="card">
-          <h2>Visitors per hour</h2>
-          <p class="hint">Vietnam time · today vs yesterday · distinct browsers in each hour</p>
+          <h2>Today, hour by hour</h2>
+          <p class="hint">Vietnam time · visitors and sub activations in each hour (people)</p>
           <div class="legend" id="lg-hourly"></div>
           <div class="chart" id="c-hourly"></div>
         </section>
 
         <section class="card">
-          <h2>Last 30 days</h2>
-          <p class="hint">Visitors and sub activations per day (people)</p>
-          <div class="legend" id="lg-daily"></div>
-          <div class="chart" id="c-daily"></div>
-        </section>
-
-        <section class="card">
-          <h2>Daily numbers</h2>
+          <h2>Today by hour</h2>
           <div class="table-wrap"><table id="tbl"></table></div>
         </section>
       </div>
@@ -132,7 +125,8 @@
 
     <footer>
       Source: GA4 → BigQuery (<code>web_live</code>, refreshed every 15 min). artimind.com + artimind.io,
-      excluding Vietnam and test traffic. Days are Vietnam calendar days. People = distinct browsers,
+      excluding Vietnam and test traffic. Shows today only (Vietnam calendar day); it rolls over at
+      midnight Vietnam time. People = distinct browsers,
       so one person on two devices counts twice. Sub activation = <code>activate_success</code>
       (FE signal); Stripe / backend remain the source of truth for money.
     </footer>
@@ -168,8 +162,6 @@
 
   const dayLabel = (iso) =>
     new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-  const shortDay = (iso) =>
-    new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
   const vnTime = (iso) =>
     new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
 
@@ -177,43 +169,44 @@
 
   // ── Tiles ────────────────────────────────────────────────────────────────
   function renderTiles() {
-    const d = data.daily;
-    const t = d[d.length - 1];
-    const y = d[d.length - 2] ?? {};
+    const t = data.daily[0];
+    const lastHour = data.hourly[data.hourly.length - 1];
     const pct = (a, b) => (b ? Math.round((100 * a) / b) + '%' : '–');
     const tiles = [
       {
-        label: `Visitors · ${dayLabel(t.event_date)}`,
+        label: 'Visitors',
         value: t.visitors,
-        subs: [`${fmt(t.new_visitors)} new`, `Yesterday ${fmt(y.visitors)}`],
+        subs: [
+          `${fmt(t.new_visitors)} new`,
+          lastHour ? `${fmt(lastHour.visitors)} in the ${lastHour.hour_vn.slice(11, 16)} hour` : '',
+        ],
       },
       {
         label: 'Sub activations (/activate)',
         value: t.activate_success_users,
         subs: [
           `Funnel ${fmt(t.activate_success_funnel)} · Stripe return ${fmt(t.activate_success_stripe_return)} · other ${fmt(t.activate_success_other)}`,
-          `${pct(t.activate_success_users, t.activate_lookup_users)} of ${fmt(t.activate_lookup_users)} lookups · yesterday ${fmt(y.activate_success_users)}`,
+          `${pct(t.activate_success_users, t.activate_lookup_users)} of ${fmt(t.activate_lookup_users)} lookups · ${fmt(t.activate_error_users)} error${t.activate_error_users === 1 ? '' : 's'}`,
         ],
       },
       {
         label: 'Web sub purchases',
         value: t.web_sub_purchasers,
         subs: [
-          `Paywall ${fmt(t.paywall_viewers)} → checkout ${fmt(t.checkout_openers)}`,
-          `Yesterday ${fmt(y.web_sub_purchasers)}`,
+          `Paywall ${fmt(t.paywall_viewers)} → checkout ${fmt(t.checkout_openers)} → paid ${fmt(t.web_sub_purchasers)}`,
         ],
       },
       {
         label: 'Credit pack buyers',
         value: t.credit_pack_buyers,
-        subs: [`Yesterday ${fmt(y.credit_pack_buyers)}`],
+        subs: [],
       },
     ];
     $('tiles').innerHTML = tiles
       .map(
         (x) => `<div class="card tile"><div class="label">${x.label}</div>
           <div class="value">${fmt(x.value)}</div>
-          ${x.subs.map((s) => `<div class="sub">${s}</div>`).join('')}</div>`,
+          ${x.subs.filter(Boolean).map((s) => `<div class="sub">${s}</div>`).join('')}</div>`,
       )
       .join('');
   }
@@ -330,71 +323,58 @@
     host.append(svg);
   }
 
+  const hourIndex = () => {
+    const rows = new Array(24).fill(null);
+    for (const h of data.hourly) rows[Number(h.hour_vn.slice(11, 13))] = h;
+    const last = rows.reduce((acc, r, i) => (r ? i : acc), -1);
+    return { rows, last };
+  };
+  const hourName = (i) => String(i).padStart(2, '0') + ':00';
+
   function renderCharts() {
-    const d = data.daily;
-    const today = d[d.length - 1].event_date;
-    const yesterday = d.length > 1 ? d[d.length - 2].event_date : null;
-    const byDay = (day) => {
-      const arr = new Array(24).fill(null);
-      for (const h of data.hourly) if (h.event_date === day) arr[Number(h.hour_vn.slice(11, 13))] = h.visitors;
-      return arr;
-    };
-    const fillGaps = (arr, upTo) => arr.map((v, i) => (i <= upTo ? v ?? 0 : null));
-    const tArr = byDay(today);
-    const lastHour = tArr.reduce((acc, v, i) => (v != null ? i : acc), -1);
-    const hours = [...Array(24).keys()].map((h) => String(h).padStart(2, '0') + ':00');
+    const { rows, last } = hourIndex();
+    const col = (k) => rows.map((r, i) => (i <= last ? r?.[k] ?? 0 : null));
     lineChart($('c-hourly'), $('lg-hourly'), {
-      labels: hours.map((h) => h.slice(0, 2)),
-      tipLabels: hours.map((h, i) => `${h}–${String(i).padStart(2, '0')}:59`),
+      labels: rows.map((_, i) => String(i).padStart(2, '0')),
+      tipLabels: rows.map((_, i) => `${hourName(i)}–${String(i).padStart(2, '0')}:59`),
       tickEvery: 3,
       series: [
-        { name: 'Today', color: '--series-1', values: fillGaps(tArr, lastHour) },
-        ...(yesterday ? [{ name: 'Yesterday', color: '--series-2', values: fillGaps(byDay(yesterday), 23) }] : []),
-      ],
-    });
-    lineChart($('c-daily'), $('lg-daily'), {
-      labels: d.map((r) => shortDay(r.event_date)),
-      tipLabels: d.map((r) => dayLabel(r.event_date)),
-      tickEvery: Math.max(1, Math.ceil(d.length / 8)),
-      series: [
-        { name: 'Visitors', color: '--series-1', values: d.map((r) => r.visitors) },
-        { name: 'Activations', color: '--series-2', values: d.map((r) => r.activate_success_users) },
+        { name: 'Visitors', color: '--series-1', values: col('visitors') },
+        { name: 'Activations', color: '--series-2', values: col('activate_success_users') },
       ],
     });
   }
 
   function renderTable() {
-    const cols = [
-      ['Day', (r) => dayLabel(r.event_date)],
-      ['Visitors', (r) => fmt(r.visitors)],
-      ['New', (r) => fmt(r.new_visitors)],
-      ['/activate lookups', (r) => fmt(r.activate_lookup_users)],
-      ['Activations', (r) => fmt(r.activate_success_users)],
-      ['· funnel', (r) => fmt(r.activate_success_funnel)],
-      ['· Stripe return', (r) => fmt(r.activate_success_stripe_return)],
-      ['· other', (r) => fmt(r.activate_success_other)],
-      ['Activate errors', (r) => fmt(r.activate_error_users)],
-      ['Paywall', (r) => fmt(r.paywall_viewers)],
-      ['Checkout', (r) => fmt(r.checkout_openers)],
-      ['Web purchases', (r) => fmt(r.web_sub_purchasers)],
-      ['Credit packs', (r) => fmt(r.credit_pack_buyers)],
-    ];
-    const rows = [...data.daily].reverse();
+    const { rows, last } = hourIndex();
+    const t = data.daily[0];
+    const body = [];
+    for (let i = last; i >= 0; i--) {
+      const r = rows[i] ?? {};
+      body.push(`<tr><td>${hourName(i)}</td><td>${fmt(r.visitors ?? 0)}</td><td>${fmt(r.new_visitors ?? 0)}</td>` +
+        `<td>${fmt(r.activate_success_users ?? 0)}</td><td>${fmt(r.web_sub_purchasers ?? 0)}</td></tr>`);
+    }
     $('tbl').innerHTML =
-      `<thead><tr>${cols.map(([h]) => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
-      rows.map((r, i) => `<tr class="${i === 0 ? 'today' : ''}">${cols.map(([, f]) => `<td>${f(r)}</td>`).join('')}</tr>`).join('') +
-      '</tbody>';
+      '<thead><tr><th>Hour</th><th>Visitors</th><th>New</th><th>Activations</th><th>Web purchases</th></tr></thead>' +
+      `<tbody><tr class="today"><td>Whole day</td><td>${fmt(t.visitors)}</td><td>${fmt(t.new_visitors)}</td>` +
+      `<td>${fmt(t.activate_success_users)}</td><td>${fmt(t.web_sub_purchasers)}</td></tr>${body.join('')}</tbody>`;
   }
 
   function renderMeta() {
+    if (!data.daily.length) {
+      $('meta').textContent = 'No data for today yet. The first numbers appear 15–30 min after midnight Vietnam time.';
+      return;
+    }
     const mins = Math.round((Date.now() - new Date(data.refreshedAt)) / 60000);
     $('meta').textContent =
-      `Data as of ${vnTime(data.refreshedAt)} Vietnam time (${mins} min ago). Updates every 15 min; this page reloads data every 5 min.`;
+      `Today, ${dayLabel(data.daily[0].event_date)} · data as of ${vnTime(data.refreshedAt)} Vietnam time (${mins} min ago). Updates every 15 min; this page reloads data every 5 min.`;
   }
 
   function render() {
-    if (!data || !data.daily.length) return;
+    if (!data) return;
     renderMeta();
+    $('content').hidden = !data.daily.length;
+    if (!data.daily.length) return;
     renderTiles();
     renderCharts();
     renderTable();
@@ -411,7 +391,6 @@
       const blob = await fetch(`data.enc.json?t=${Date.now()}`, { cache: 'no-store' }).then((r) => r.json());
       data = await decrypt(blob, key);
       $('locked').hidden = true;
-      $('content').hidden = false;
       render();
     } catch (err) {
       if (!data) {

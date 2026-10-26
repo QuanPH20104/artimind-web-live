@@ -1,6 +1,6 @@
 # artimind-web-live
 
-Live web KPIs for Artimind (visitors, `/activate` sub activations, web purchases), published to
+Today-only web KPIs for Artimind (visitors, `/activate` sub activations, web purchases), published to
 GitHub Pages every 15 minutes.
 
 - Data: BigQuery `iip032-artimind.web_live.*`, refreshed every 15 min by a scheduled query

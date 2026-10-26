@@ -43,14 +43,14 @@ async function query(sql) {
 
 const daily = await query(`
   SELECT * FROM \`${PROJECT}.web_live.daily_kpis\`
-  WHERE event_date >= DATE_SUB(CURRENT_DATE('Asia/Ho_Chi_Minh'), INTERVAL 29 DAY)
-  ORDER BY event_date`);
+  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')`);
 const hourly = await query(`
   SELECT event_date, hour_vn, visitors, new_visitors, activate_success_users, web_sub_purchasers
   FROM \`${PROJECT}.web_live.hourly_kpis\`
-  WHERE event_date >= DATE_SUB(CURRENT_DATE('Asia/Ho_Chi_Minh'), INTERVAL 1 DAY)
+  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')
   ORDER BY hour_vn`);
 
+// Today only (Vietnam calendar day): nothing older is published.
 const refreshedAt = daily.reduce((max, d) => (d.refreshed_at > max ? d.refreshed_at : max), '');
 const payload = {
   generatedAt: new Date().toISOString(),
