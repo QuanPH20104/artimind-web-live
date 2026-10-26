@@ -1,11 +1,11 @@
 # artimind-web-live
 
-Today-only web KPIs for Artimind (visitors, `/activate` sub activations, web purchases), published to
-GitHub Pages every 15 minutes.
+Today-only web KPIs for Artimind (visitors, people per 10-minute slot, `/activate` sub activations,
+web purchases, AI-service and activate fail rates), published to GitHub Pages every 10 minutes.
 
-- Data: BigQuery `iip032-artimind.web_live.*`, refreshed every 15 min by a scheduled query
+- Data: BigQuery `iip032-artimind.web_live.*`, refreshed every 10 min (at :x4) by a scheduled query
   (SQL lives in the main web repo under `reports/web-live/`).
-- `publish.yml` runs every 15 min: it authenticates to GCP keylessly (Workload Identity Federation,
+- `publish.yml` runs every 10 min, 2 min after each refresh (GitHub may start scheduled runs a few minutes late): it authenticates to GCP keylessly (Workload Identity Federation,
   pool `github` / provider `web-live`, SA `web-live-gh@iip032-artimind`, read-only on `web_live`),
   runs `build.mjs`, and deploys `site/` to Pages.
 - The Pages site only serves **AES-GCM ciphertext** (`data.enc.json`). The page decrypts it in the

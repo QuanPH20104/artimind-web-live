@@ -2,7 +2,8 @@ name: publish
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # 2 min after each BigQuery refresh (scheduled query runs at :x4, ~75 s)
+    - cron: '6-59/10 * * * *'
   workflow_dispatch:
   push:
     branches: [main]

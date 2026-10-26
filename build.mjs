@@ -49,6 +49,17 @@ const hourly = await query(`
   FROM \`${PROJECT}.web_live.hourly_kpis\`
   WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')
   ORDER BY hour_vn`);
+const slots = await query(`
+  SELECT FORMAT_DATETIME('%Y-%m-%dT%H:%M', slot_vn) AS slot_vn, active_users, new_today_users,
+    first_visit_users, activate_success_users, activate_error_users, gen_success_events, gen_error_events
+  FROM \`${PROJECT}.web_live.slot_kpis\`
+  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')
+  ORDER BY slot_vn`);
+const services = await query(`
+  SELECT service, success_events, error_events, error_users, top_errors
+  FROM \`${PROJECT}.web_live.service_kpis\`
+  WHERE event_date = CURRENT_DATE('Asia/Ho_Chi_Minh')
+  ORDER BY service`);
 
 // Today only (Vietnam calendar day): nothing older is published.
 const refreshedAt = daily.reduce((max, d) => (d.refreshed_at > max ? d.refreshed_at : max), '');
@@ -57,6 +68,8 @@ const payload = {
   refreshedAt,
   daily: daily.map(({ refreshed_at, ...d }) => d),
   hourly,
+  slots,
+  services,
 };
 
 const key = await crypto.subtle.importKey('raw', Buffer.from(DASHBOARD_KEY, 'base64url'), 'AES-GCM', false, ['encrypt']);
@@ -70,4 +83,4 @@ await writeFile(
 );
 await copyFile('index.html', 'site/index.html');
 await writeFile('site/robots.txt', 'User-agent: *\nDisallow: /\n');
-console.log(`daily=${daily.length} hourly=${hourly.length} refreshedAt=${refreshedAt}`);
+console.log(`daily=${daily.length} hourly=${hourly.length} slots=${slots.length} services=${services.length} refreshedAt=${refreshedAt}`);
