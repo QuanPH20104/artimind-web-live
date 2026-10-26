@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Artimind Web · Live</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface-1: #1a1a19;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: #f9f9f7; }
+  @media (prefers-color-scheme: dark) { body { background: #0d0d0d; } }
+  .viz-root {
+    min-height: 100vh;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 24px 16px 48px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  .wrap > * { min-width: 0; }
+  header h1 { font-size: 20px; margin: 0 0 4px; font-weight: 650; }
+  header p { margin: 0; color: var(--text-secondary); }
+  .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .tile .label { color: var(--text-secondary); font-size: 13px; }
+  .tile .value { font-size: 36px; font-weight: 650; line-height: 1.15; margin: 4px 0 6px; }
+  .tile .sub { color: var(--text-secondary); font-size: 12.5px; }
+  .tile .sub + .sub { margin-top: 2px; }
+  h2 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+  .hint { color: var(--text-muted); font-size: 12.5px; margin: 0 0 10px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+  .chart { position: relative; width: 100%; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .tick { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .dlabel { fill: var(--text-secondary); font-size: 11.5px; }
+  .tip {
+    position: fixed; pointer-events: none; z-index: 10;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 8px 10px; font-size: 12.5px; min-width: 140px;
+  }
+  .tip .t { color: var(--text-secondary); margin-bottom: 4px; }
+  .tip .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .tip .row b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .tip .row span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 6px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+  td { font-variant-numeric: tabular-nums; }
+  tr.today td { font-weight: 600; }
+  .muted { color: var(--text-muted); }
+  footer { color: var(--text-muted); font-size: 12px; }
+  .locked { text-align: center; padding: 48px 16px; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<main class="viz-root">
+  <div class="wrap">
+    <header>
+      <h1>Artimind Web · Live</h1>
+      <p id="meta">Loading…</p>
+    </header>
+
+    <div id="locked" class="card locked" hidden>
+      This dashboard needs its access link (the one ending in <code>#k=…</code>).
+    </div>
+
+    <div id="content" hidden>
+      <div class="wrap">
+        <section class="tiles" id="tiles"></section>
+
+        <section class="card">
+          <h2>Visitors per hour</h2>
+          <p class="hint">Vietnam time · today vs yesterday · distinct browsers in each hour</p>
+          <div class="legend" id="lg-hourly"></div>
+          <div class="chart" id="c-hourly"></div>
+        </section>
+
+        <section class="card">
+          <h2>Last 30 days</h2>
+          <p class="hint">Visitors and sub activations per day (people)</p>
+          <div class="legend" id="lg-daily"></div>
+          <div class="chart" id="c-daily"></div>
+        </section>
+
+        <section class="card">
+          <h2>Daily numbers</h2>
+          <div class="table-wrap"><table id="tbl"></table></div>
+        </section>
+      </div>
+    </div>
+
+    <footer>
+      Source: GA4 → BigQuery (<code>web_live</code>, refreshed every 15 min). artimind.com + artimind.io,
+      excluding Vietnam and test traffic. Days are Vietnam calendar days. People = distinct browsers,
+      so one person on two devices counts twice. Sub activation = <code>activate_success</code>
+      (FE signal); Stripe / backend remain the source of truth for money.
+    </footer>
+  </div>
+  <div id="tip" class="tip" hidden></div>
+</main>
+
+<script>
+(() => {
+  const KEY_STORE = 'artimind-web-live-key';
+  const TZ = 'Asia/Ho_Chi_Minh';
+  const $ = (id) => document.getElementById(id);
+  const nf = new Intl.NumberFormat('en-US');
+  const fmt = (n) => (n == null ? '–' : nf.format(n));
+
+  function readKey() {
+    const m = location.hash.match(/k=([A-Za-z0-9_-]+)/);
+    if (m) {
+      try { localStorage.setItem(KEY_STORE, m[1]); } catch {}
+      return m[1];
+    }
+    try { return localStorage.getItem(KEY_STORE); } catch { return null; }
+  }
+
+  const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const fromB64url = (s) => fromB64(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4));
+
+  async function decrypt(blob, keyText) {
+    const key = await crypto.subtle.importKey('raw', fromB64url(keyText), 'AES-GCM', false, ['decrypt']);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(blob.iv) }, key, fromB64(blob.ct));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
+
+  const dayLabel = (iso) =>
+    new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const shortDay = (iso) =>
+    new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const vnTime = (iso) =>
+    new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+
+  let data = null;
+
+  // ── Tiles ────────────────────────────────────────────────────────────────
+  function renderTiles() {
+    const d = data.daily;
+    const t = d[d.length - 1];
+    const y = d[d.length - 2] ?? {};
+    const pct = (a, b) => (b ? Math.round((100 * a) / b) + '%' : '–');
+    const tiles = [
+      {
+        label: `Visitors · ${dayLabel(t.event_date)}`,
+        value: t.visitors,
+        subs: [`${fmt(t.new_visitors)} new`, `Yesterday ${fmt(y.visitors)}`],
+      },
+      {
+        label: 'Sub activations (/activate)',
+        value: t.activate_success_users,
+        subs: [
+          `Funnel ${fmt(t.activate_success_funnel)} · Stripe return ${fmt(t.activate_success_stripe_return)} · other ${fmt(t.activate_success_other)}`,
+          `${pct(t.activate_success_users, t.activate_lookup_users)} of ${fmt(t.activate_lookup_users)} lookups · yesterday ${fmt(y.activate_success_users)}`,
+        ],
+      },
+      {
+        label: 'Web sub purchases',
+        value: t.web_sub_purchasers,
+        subs: [
+          `Paywall ${fmt(t.paywall_viewers)} → checkout ${fmt(t.checkout_openers)}`,
+          `Yesterday ${fmt(y.web_sub_purchasers)}`,
+        ],
+      },
+      {
+        label: 'Credit pack buyers',
+        value: t.credit_pack_buyers,
+        subs: [`Yesterday ${fmt(y.credit_pack_buyers)}`],
+      },
+    ];
+    $('tiles').innerHTML = tiles
+      .map(
+        (x) => `<div class="card tile"><div class="label">${x.label}</div>
+          <div class="value">${fmt(x.value)}</div>
+          ${x.subs.map((s) => `<div class="sub">${s}</div>`).join('')}</div>`,
+      )
+      .join('');
+  }
+
+  // ── Line chart (one y-axis, crosshair + tooltip) ─────────────────────────
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs = {}) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    return n;
+  };
+  function niceMax(v) {
+    if (v <= 0) return 4;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+    return 10 * p;
+  }
+
+  function lineChart(host, legendHost, { labels, tipLabels, series, tickEvery }) {
+    legendHost.innerHTML = series
+      .map((s) => `<span><i class="swatch" style="background:var(${s.color})"></i>${s.name}</span>`)
+      .join('');
+    host.innerHTML = '';
+    const W = Math.max(host.clientWidth, 300);
+    const H = 240;
+    const m = { l: 40, r: 96, t: 10, b: 26 };
+    const iw = W - m.l - m.r;
+    const ih = H - m.t - m.b;
+    const n = labels.length;
+    const max = niceMax(Math.max(1, ...series.flatMap((s) => s.values.filter((v) => v != null))));
+    const x = (i) => m.l + (n === 1 ? iw / 2 : (i * iw) / (n - 1));
+    const y = (v) => m.t + ih - (v / max) * ih;
+
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img' });
+    for (let k = 0; k <= 4; k++) {
+      const v = (max * k) / 4;
+      svg.append(el('line', { x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v), stroke: k === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1 }));
+      const t = el('text', { x: m.l - 8, y: y(v) + 4, 'text-anchor': 'end', class: 'tick' });
+      t.textContent = nf.format(Math.round(v));
+      svg.append(t);
+    }
+    const every = Math.max(tickEvery, Math.ceil(n / Math.max(2, Math.floor(iw / 56))));
+    labels.forEach((lab, i) => {
+      const isLast = i === n - 1;
+      if (!isLast && (i % every !== 0 || n - 1 - i < every / 2)) return;
+      const t = el('text', { x: x(i), y: H - 6, 'text-anchor': 'middle', class: 'tick' });
+      t.textContent = lab;
+      svg.append(t);
+    });
+
+    // lines + direct labels at the last point (nudged apart when they collide)
+    const ends = [];
+    for (const s of series) {
+      let d = '';
+      let pen = false;
+      s.values.forEach((v, i) => {
+        if (v == null) { pen = false; return; }
+        d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+        pen = true;
+      });
+      svg.append(el('path', { d, fill: 'none', stroke: `var(${s.color})`, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+      let last = -1;
+      s.values.forEach((v, i) => { if (v != null) last = i; });
+      if (last >= 0) ends.push({ s, i: last, py: y(s.values[last]) });
+    }
+    ends.sort((a, b) => a.py - b.py);
+    for (let k = 1; k < ends.length; k++) if (ends[k].py - ends[k - 1].py < 14) ends[k].py = ends[k - 1].py + 14;
+    for (const e of ends) {
+      const t = el('text', { x: x(e.i) + 8, y: e.py + 4, class: 'dlabel' });
+      t.textContent = `${e.s.name} ${fmt(e.s.values[e.i])}`;
+      svg.append(t);
+    }
+
+    // hover layer
+    const cross = el('line', { y1: m.t, y2: m.t + ih, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden' });
+    svg.append(cross);
+    const dots = series.map((s) => {
+      const c = el('circle', { r: 4, fill: `var(${s.color})`, stroke: 'var(--surface-1)', 'stroke-width': 2, visibility: 'hidden' });
+      svg.append(c);
+      return c;
+    });
+    const hit = el('rect', { x: m.l - 10, y: 0, width: iw + 20, height: H, fill: 'transparent' });
+    svg.append(hit);
+    const tip = $('tip');
+    const hide = () => {
+      tip.hidden = true;
+      cross.setAttribute('visibility', 'hidden');
+      dots.forEach((d) => d.setAttribute('visibility', 'hidden'));
+    };
+    hit.addEventListener('pointermove', (ev) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((ev.clientX - r.left) / r.width) * W;
+      const i = Math.max(0, Math.min(n - 1, Math.round(((px - m.l) / iw) * (n - 1))));
+      cross.setAttribute('x1', x(i));
+      cross.setAttribute('x2', x(i));
+      cross.setAttribute('visibility', 'visible');
+      series.forEach((s, k) => {
+        const v = s.values[i];
+        if (v == null) return dots[k].setAttribute('visibility', 'hidden');
+        dots[k].setAttribute('cx', x(i));
+        dots[k].setAttribute('cy', y(v));
+        dots[k].setAttribute('visibility', 'visible');
+      });
+      tip.innerHTML = `<div class="t">${tipLabels[i]}</div>` + series
+        .map((s) => `<div class="row"><span><i class="swatch" style="background:var(${s.color})"></i>${s.name}</span><b>${fmt(s.values[i])}</b></div>`)
+        .join('');
+      tip.hidden = false;
+      const tw = tip.offsetWidth;
+      const left = ev.clientX + 14 + tw > window.innerWidth ? ev.clientX - 14 - tw : ev.clientX + 14;
+      tip.style.left = `${left}px`;
+      tip.style.top = `${ev.clientY - tip.offsetHeight / 2}px`;
+    });
+    hit.addEventListener('pointerleave', hide);
+    host.append(svg);
+  }
+
+  function renderCharts() {
+    const d = data.daily;
+    const today = d[d.length - 1].event_date;
+    const yesterday = d.length > 1 ? d[d.length - 2].event_date : null;
+    const byDay = (day) => {
+      const arr = new Array(24).fill(null);
+      for (const h of data.hourly) if (h.event_date === day) arr[Number(h.hour_vn.slice(11, 13))] = h.visitors;
+      return arr;
+    };
+    const fillGaps = (arr, upTo) => arr.map((v, i) => (i <= upTo ? v ?? 0 : null));
+    const tArr = byDay(today);
+    const lastHour = tArr.reduce((acc, v, i) => (v != null ? i : acc), -1);
+    const hours = [...Array(24).keys()].map((h) => String(h).padStart(2, '0') + ':00');
+    lineChart($('c-hourly'), $('lg-hourly'), {
+      labels: hours.map((h) => h.slice(0, 2)),
+      tipLabels: hours.map((h, i) => `${h}–${String(i).padStart(2, '0')}:59`),
+      tickEvery: 3,
+      series: [
+        { name: 'Today', color: '--series-1', values: fillGaps(tArr, lastHour) },
+        ...(yesterday ? [{ name: 'Yesterday', color: '--series-2', values: fillGaps(byDay(yesterday), 23) }] : []),
+      ],
+    });
+    lineChart($('c-daily'), $('lg-daily'), {
+      labels: d.map((r) => shortDay(r.event_date)),
+      tipLabels: d.map((r) => dayLabel(r.event_date)),
+      tickEvery: Math.max(1, Math.ceil(d.length / 8)),
+      series: [
+        { name: 'Visitors', color: '--series-1', values: d.map((r) => r.visitors) },
+        { name: 'Activations', color: '--series-2', values: d.map((r) => r.activate_success_users) },
+      ],
+    });
+  }
+
+  function renderTable() {
+    const cols = [
+      ['Day', (r) => dayLabel(r.event_date)],
+      ['Visitors', (r) => fmt(r.visitors)],
+      ['New', (r) => fmt(r.new_visitors)],
+      ['/activate lookups', (r) => fmt(r.activate_lookup_users)],
+      ['Activations', (r) => fmt(r.activate_success_users)],
+      ['· funnel', (r) => fmt(r.activate_success_funnel)],
+      ['· Stripe return', (r) => fmt(r.activate_success_stripe_return)],
+      ['· other', (r) => fmt(r.activate_success_other)],
+      ['Activate errors', (r) => fmt(r.activate_error_users)],
+      ['Paywall', (r) => fmt(r.paywall_viewers)],
+      ['Checkout', (r) => fmt(r.checkout_openers)],
+      ['Web purchases', (r) => fmt(r.web_sub_purchasers)],
+      ['Credit packs', (r) => fmt(r.credit_pack_buyers)],
+    ];
+    const rows = [...data.daily].reverse();
+    $('tbl').innerHTML =
+      `<thead><tr>${cols.map(([h]) => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
+      rows.map((r, i) => `<tr class="${i === 0 ? 'today' : ''}">${cols.map(([, f]) => `<td>${f(r)}</td>`).join('')}</tr>`).join('') +
+      '</tbody>';
+  }
+
+  function renderMeta() {
+    const mins = Math.round((Date.now() - new Date(data.refreshedAt)) / 60000);
+    $('meta').textContent =
+      `Data as of ${vnTime(data.refreshedAt)} Vietnam time (${mins} min ago). Updates every 15 min; this page reloads data every 5 min.`;
+  }
+
+  function render() {
+    if (!data || !data.daily.length) return;
+    renderMeta();
+    renderTiles();
+    renderCharts();
+    renderTable();
+  }
+
+  async function load() {
+    const key = readKey();
+    if (!key) {
+      $('meta').textContent = '';
+      $('locked').hidden = false;
+      return;
+    }
+    try {
+      const blob = await fetch(`data.enc.json?t=${Date.now()}`, { cache: 'no-store' }).then((r) => r.json());
+      data = await decrypt(blob, key);
+      $('locked').hidden = true;
+      $('content').hidden = false;
+      render();
+    } catch (err) {
+      if (!data) {
+        $('meta').textContent = '';
+        $('locked').hidden = false;
+        $('locked').textContent = 'Could not open the data. The access link may be wrong or out of date.';
+      }
+      console.error(err);
+    }
+  }
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => data && renderCharts(), 150);
+  });
+  setInterval(() => (data ? renderMeta() : null), 60000);
+  window.addEventListener('hashchange', load);
+  setInterval(load, 5 * 60000);
+  load();
+})();
+</script>
+</body>
+</html>
