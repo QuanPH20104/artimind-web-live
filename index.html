@@ -127,7 +127,8 @@
       Source: GA4 → BigQuery (<code>web_live</code>, refreshed every 15 min). artimind.com + artimind.io,
       excluding Vietnam and test traffic. Shows today only (Vietnam calendar day); it rolls over at
       midnight Vietnam time. People = distinct browsers,
-      so one person on two devices counts twice. Sub activation = <code>activate_success</code>
+      so one person on two devices counts twice. % activated = activations ÷ visitors in the same hour
+      (or the whole day). Sub activation = <code>activate_success</code>
       (FE signal); Stripe / backend remain the source of truth for money.
     </footer>
   </div>
@@ -166,12 +167,12 @@
     new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
 
   let data = null;
+  const pct = (a, b) => (b ? Math.round((100 * a) / b) + '%' : '–');
 
   // ── Tiles ────────────────────────────────────────────────────────────────
   function renderTiles() {
     const t = data.daily[0];
     const lastHour = data.hourly[data.hourly.length - 1];
-    const pct = (a, b) => (b ? Math.round((100 * a) / b) + '%' : '–');
     const tiles = [
       {
         label: 'Visitors',
@@ -185,6 +186,7 @@
         label: 'Sub activations (/activate)',
         value: t.activate_success_users,
         subs: [
+          `${pct(t.activate_success_users, t.visitors)} of today's visitors activated`,
           `Funnel ${fmt(t.activate_success_funnel)} · Stripe return ${fmt(t.activate_success_stripe_return)} · other ${fmt(t.activate_success_other)}`,
           `${pct(t.activate_success_users, t.activate_lookup_users)} of ${fmt(t.activate_lookup_users)} lookups · ${fmt(t.activate_error_users)} error${t.activate_error_users === 1 ? '' : 's'}`,
         ],
@@ -352,12 +354,14 @@
     for (let i = last; i >= 0; i--) {
       const r = rows[i] ?? {};
       body.push(`<tr><td>${hourName(i)}</td><td>${fmt(r.visitors ?? 0)}</td><td>${fmt(r.new_visitors ?? 0)}</td>` +
-        `<td>${fmt(r.activate_success_users ?? 0)}</td><td>${fmt(r.web_sub_purchasers ?? 0)}</td></tr>`);
+        `<td>${fmt(r.activate_success_users ?? 0)}</td><td>${pct(r.activate_success_users ?? 0, r.visitors)}</td>` +
+        `<td>${fmt(r.web_sub_purchasers ?? 0)}</td></tr>`);
     }
     $('tbl').innerHTML =
-      '<thead><tr><th>Hour</th><th>Visitors</th><th>New</th><th>Activations</th><th>Web purchases</th></tr></thead>' +
+      '<thead><tr><th>Hour</th><th>Visitors</th><th>New</th><th>Activations</th><th>% activated</th><th>Web purchases</th></tr></thead>' +
       `<tbody><tr class="today"><td>Whole day</td><td>${fmt(t.visitors)}</td><td>${fmt(t.new_visitors)}</td>` +
-      `<td>${fmt(t.activate_success_users)}</td><td>${fmt(t.web_sub_purchasers)}</td></tr>${body.join('')}</tbody>`;
+      `<td>${fmt(t.activate_success_users)}</td><td>${pct(t.activate_success_users, t.visitors)}</td>` +
+      `<td>${fmt(t.web_sub_purchasers)}</td></tr>${body.join('')}</tbody>`;
   }
 
   function renderMeta() {
